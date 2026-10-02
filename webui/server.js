@@ -31,7 +31,7 @@ async function serviceState() {
 
 async function processRunning(name) {
   const r = await run('tasklist.exe', ['/FI', 'IMAGENAME eq ' + name]);
-  return new RegExp('^' + name.replace('.', '\\.') + '\\s', 'im').test(r.stdout);
+  return r.stdout.split(/\r?\n/).some(line => line.trim().toLowerCase().startsWith(name.toLowerCase() + ' '));
 }
 
 function currentStrategy() {
