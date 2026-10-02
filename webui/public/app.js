@@ -19,5 +19,5 @@ async function act(action,value){
   try{const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,value})});const d=await r.json();$('#log').textContent=d.stdout||d.stderr||d.error||'Готово';setTimeout(load,900)}catch(e){$('#log').textContent='Ошибка: '+e.message}
 }
 document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>act(b.dataset.action));
-$('#installStrategy').onclick=()=>act('strategy',$('#strategies').value);
+$('#installStrategy').onclick=()=>act('install',$('#strategies').value);
 $('#refresh').onclick=load;load();setInterval(load,5000);
