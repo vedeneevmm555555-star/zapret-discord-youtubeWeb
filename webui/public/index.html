@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zapret Web UI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div><h1>Zapret Web UI</h1><p>Управление Flowseal Zapret без консольного меню</p></div><button id="refresh">Обновить</button></header>
+<main>
+<section class="cards">
+  <article><span>Сервис</span><strong id="service">—</strong><small id="serviceHint">—</small></article>
+  <article><span>winws.exe</span><strong id="winws">—</strong><small>Обход DPI</small></article>
+  <article><span>WinDivert</span><strong id="windivert">—</strong><small>Драйвер фильтрации</small></article>
+  <article><span>Стратегия</span><strong id="strategy">—</strong><small id="admin">—</small></article>
+</section>
+
+<section class="panel">
+<h2>Сервис</h2>
+<div class="actions">
+<button data-action="start">Запустить</button><button data-action="stop">Остановить</button><button data-action="restart">Перезапустить</button><button class="danger" data-action="remove">Удалить сервис</button>
+</div>
+</section>
+
+<section class="panel">
+<h2>Стратегия</h2>
+<p class="muted">Выберите один из general*.bat и установите его как службу.</p>
+<div class="strategy"><select id="strategies"></select><button id="installStrategy">Установить стратегию</button></div>
+</section>
+
+<section class="panel">
+<h2>Настройки</h2>
+<div class="grid">
+<button data-action="game">Game Filter</button><button data-action="ipset">IPSet Filter</button><button data-action="autoupdate">Auto-Update Check</button><button data-action="fakes">Replace active fakes</button>
+</div>
+</section>
+
+<section class="panel">
+<h2>Обновления и инструменты</h2>
+<div class="grid">
+<button data-action="ipset_update">Update IPSet List</button><button data-action="hosts_update">Update Hosts File</button><button data-action="check_updates">Check for Updates</button><button data-action="diagnostics">Run Diagnostics</button><button data-action="tests">Run Tests</button>
+</div>
+</section>
+
+<section class="panel log"><h2>Результат</h2><pre id="log">Готово.</pre></section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
