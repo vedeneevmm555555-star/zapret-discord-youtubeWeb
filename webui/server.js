@@ -63,6 +63,63 @@ function strategyList() {
     .sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
+function readFlag(name) {
+  return fs.existsSync(path.join(ROOT, 'utils', name));
+}
+
+function toggleFlag(name) {
+  const file = path.join(ROOT, 'utils', name);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (fs.existsSync(file)) {
+    fs.unlinkSync(file);
+    return false;
+  }
+  fs.writeFileSync(file, 'ENABLED\r\n', 'utf8');
+  return true;
+}
+
+function ipsetMode() {
+  const file = path.join(ROOT, 'lists', 'ipset-all.txt');
+  const backup = file + '.backup';
+  if (!fs.existsSync(file)) return 'any';
+  const data = fs.readFileSync(file, 'utf8').trim();
+  if (!data) return 'any';
+  if (data.includes('203.0.113.113/32')) return 'none';
+  return 'loaded';
+}
+
+function cycleIpset() {
+  const file = path.join(ROOT, 'lists', 'ipset-all.txt');
+  const backup = file + '.backup';
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const mode = ipsetMode();
+
+  if (mode === 'loaded') {
+    if (fs.existsSync(backup)) fs.unlinkSync(backup);
+    fs.renameSync(file, backup);
+    fs.writeFileSync(file, '203.0.113.113/32\r\n', 'utf8');
+    return 'none';
+  }
+  if (mode === 'none') {
+    fs.writeFileSync(file, '', 'utf8');
+    return 'any';
+  }
+  if (fs.existsSync(backup)) {
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    fs.renameSync(backup, file);
+    return 'loaded';
+  }
+  return 'any';
+}
+
+function fakeList() {
+  const bin = path.join(ROOT, 'bin');
+  if (!fs.existsSync(bin)) return [];
+  return fs.readdirSync(bin)
+    .filter(f => f.toLowerCase().endsWith('.bin') && !f.toUpperCase().startsWith('ACTIVE_'))
+    .sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
 function runServiceMenu(inputs) {
   return new Promise(resolve => {
     const child = spawn(process.env.ComSpec || 'cmd.exe',
@@ -93,6 +150,10 @@ async function status() {
     windivert: (await run('sc.exe',['query','WinDivert'])).ok || (await run('sc.exe',['query','WinDivert14'])).ok || fs.existsSync(path.join(ROOT, 'bin', 'WinDivert64.sys')), 
     strategy: currentStrategy(),
     strategies: strategyList(),
+    gameFilter: readFlag('game_filter.enabled'),
+    autoUpdate: readFlag('check_updates.enabled'),
+    ipsetMode: ipsetMode(),
+    fakes: fakeList(),
     root: ROOT,
     version: '1.1.0'
   };
@@ -123,15 +184,46 @@ async function action(name, value) {
       if (idx < 0) return {ok:false,error:'Неизвестная стратегия.'};
       return runServiceMenu(['1', idx + 1, '', '0']);
     }
-    case 'game': return runServiceMenu(['4','0']);
-    case 'ipset': return runServiceMenu(['5','0']);
-    case 'autoupdate': return runServiceMenu(['6','0']);
-    case 'fakes': return runServiceMenu(['7','0']);
-    case 'ipset_update': return runServiceMenu(['8','0']);
-    case 'hosts_update': return runServiceMenu(['9','0']);
-    case 'check_updates': return runServiceMenu(['10','0']);
-    case 'diagnostics': return runServiceMenu(['11','0']);
-    case 'tests': return runServiceMenu(['12','0']);
+    case 'game': {
+      const enabled = toggleFlag('game_filter.enabled');
+      return {ok:true, stdout:'Game Filter: ' + (enabled ? 'включен' : 'выключен') + '. Перезапустите Zapret для применения.'};
+    }
+    case 'ipset': {
+      const mode = cycleIpset();
+      return {ok:true, stdout:'IPSet Filter: режим ' + mode + '.'};
+    }
+    case 'autoupdate': {
+      const enabled = toggleFlag('check_updates.enabled');
+      return {ok:true, stdout:'Auto-Update Check: ' + (enabled ? 'включен' : 'выключен') + '.'};
+    }
+    case 'fakes': {
+      if (!value || !['1','2'].includes(String(value.type)) || !value.file) {
+        return {ok:false,error:'Выберите тип fake и файл.'};
+      }
+      const src = path.join(ROOT, 'bin', path.basename(String(value.file)));
+      if (!fakeList().includes(path.basename(src))) return {ok:false,error:'Файл fake не найден.'};
+      const target = path.join(ROOT, 'bin', String(value.type) === '1' ? 'ACTIVE_DISCORD_UDP.bin' : 'ACTIVE_GAME_UDP.bin');
+      fs.copyFileSync(src, target);
+      return {ok:true, stdout:'Fake-файл заменен: ' + path.basename(target) + ' ← ' + path.basename(src)};
+    }
+    case 'ipset_update': {
+      return run('powershell.exe', ['-NoProfile','-ExecutionPolicy','Bypass','-Command',
+        "$u='https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/ipset-service.txt'; $o='" + path.join(ROOT,'lists','ipset-all.txt').replace(/'/g,"''") + "'; Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 15 -OutFile $o; Write-Output 'IPSet List обновлен.'"]);
+    }
+    case 'hosts_update':
+      return {ok:false,error:'Обновление Hosts требует интерактивного подтверждения и пока запускается из service.bat.'};
+    case 'check_updates':
+      return run('cmd.exe',['/d','/c','service.bat','check_updates','soft']);
+    case 'diagnostics': {
+      const child = spawn(process.env.ComSpec || 'cmd.exe',['/d','/k','service.bat','admin'],{cwd:ROOT,detached:true,stdio:'ignore'});
+      child.unref();
+      return {ok:true,stdout:'Диагностика открыта в отдельном окне.'};
+    }
+    case 'tests': {
+      const child = spawn(process.env.ComSpec || 'cmd.exe',['/d','/k','service.bat','admin'],{cwd:ROOT,detached:true,stdio:'ignore'});
+      child.unref();
+      return {ok:true,stdout:'Меню тестов открыто в отдельном окне.'};
+    }
     default: return {ok:false,error:'Unknown action.'};
   }
 }
