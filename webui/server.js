@@ -2,6 +2,19 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
+const { TextDecoder } = require('util');
+
+const CP866 = new TextDecoder('ibm866');
+function decodeWindows(buffer) {
+  if (!buffer) return '';
+  if (typeof buffer === 'string') return buffer;
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  const utf8 = bytes.toString('utf8');
+  // Windows console programs on Russian systems commonly write CP866.
+  // Keep UTF-8 when it is clearly valid; otherwise decode as CP866.
+  if (!utf8.includes('\uFFFD')) return utf8;
+  return CP866.decode(bytes);
+}
 const os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -12,8 +25,8 @@ const SERVICE = 'zapret';
 
 function run(file, args = [], options = {}) {
   return new Promise((resolve) => {
-    execFile(file, args, { windowsHide: true, timeout: options.timeout || 15000, encoding: 'utf8' },
-      (error, stdout, stderr) => resolve({ ok: !error, code: error?.code ?? 0, stdout, stderr }));
+    execFile(file, args, { windowsHide: true, timeout: options.timeout || 15000, encoding: 'buffer' },
+      (error, stdout, stderr) => resolve({ ok: !error, code: error?.code ?? 0, stdout: decodeWindows(stdout), stderr: decodeWindows(stderr) }));
   });
 }
 
@@ -54,10 +67,10 @@ function runServiceMenu(inputs) {
   return new Promise(resolve => {
     const child = spawn(process.env.ComSpec || 'cmd.exe',
       ['/d','/c', 'service.bat admin'], { cwd: ROOT, windowsHide: true });
-    let stdout = '', stderr = '';
-    child.stdout.on('data', d => stdout += d);
-    child.stderr.on('data', d => stderr += d);
-    child.on('close', code => resolve({ ok: code === 0, code, stdout, stderr }));
+    const stdout = [], stderr = [];
+    child.stdout.on('data', d => stdout.push(d));
+    child.stderr.on('data', d => stderr.push(d));
+    child.on('close', code => resolve({ ok: code === 0, code, stdout: decodeWindows(Buffer.concat(stdout)), stderr: decodeWindows(Buffer.concat(stderr)) }));
     child.stdin.write(inputs.map(String).join('\r\n') + '\r\n');
     child.stdin.end();
     setTimeout(() => { try { child.kill(); } catch {} }, 12000);
@@ -77,11 +90,11 @@ async function status() {
     admin: await isAdmin(),
     service: svc,
     winws: await processRunning('winws.exe'),
-    windivert: (await run('sc.exe',['query','WinDivert'])).ok,
+    windivert: (await run('sc.exe',['query','WinDivert'])).ok || (await run('sc.exe',['query','WinDivert14'])).ok || fs.existsSync(path.join(ROOT, 'bin', 'WinDivert64.sys')), 
     strategy: currentStrategy(),
     strategies: strategyList(),
     root: ROOT,
-    version: '1.0.0'
+    version: '1.1.0'
   };
 }
 
@@ -89,6 +102,12 @@ async function action(name, value) {
   if (!(await isAdmin())) return { ok:false, error:'Administrator privileges are required.' };
 
   switch (name) {
+    case 'install': {
+      const list = strategyList();
+      const idx = list.indexOf(value);
+      if (idx < 0) return {ok:false,error:'Выберите стратегию для установки сервиса.'};
+      return runServiceMenu(['1', idx + 1, '', '0']);
+    }
     case 'start': return run('sc.exe',['start',SERVICE]);
     case 'stop': return run('sc.exe',['stop',SERVICE]);
     case 'restart':
@@ -101,8 +120,7 @@ async function action(name, value) {
     case 'strategy': {
       const list = strategyList();
       const idx = list.indexOf(value);
-      if (idx < 0) return {ok:false,error:'Unknown strategy.'};
-      // service.bat menu: 1 = Install Service, then strategy number, then pause, then exit.
+      if (idx < 0) return {ok:false,error:'Неизвестная стратегия.'};
       return runServiceMenu(['1', idx + 1, '', '0']);
     }
     case 'game': return runServiceMenu(['4','0']);
