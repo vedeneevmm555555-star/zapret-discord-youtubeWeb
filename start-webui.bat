@@ -15,5 +15,5 @@ if errorlevel 1 (
 )
 echo Starting Zapret Web UI...
 echo Open: http://127.0.0.1:40210
-node "%~dp0webuiserver.js"
+node "%~dp0webui\server.js"
 pause
